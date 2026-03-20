@@ -1,3 +1,4 @@
+/blogwatcher
 venv/
 .pytest_cache
 list_blogs.txt

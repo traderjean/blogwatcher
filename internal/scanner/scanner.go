@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Hyaxia/blogwatcher/internal/model"
-	"github.com/Hyaxia/blogwatcher/internal/rss"
-	"github.com/Hyaxia/blogwatcher/internal/scraper"
-	"github.com/Hyaxia/blogwatcher/internal/storage"
+	"github.com/traderjean/blogwatcher/internal/model"
+	"github.com/traderjean/blogwatcher/internal/rss"
+	"github.com/traderjean/blogwatcher/internal/scraper"
+	"github.com/traderjean/blogwatcher/internal/storage"
 )
 
 type ScanResult struct {

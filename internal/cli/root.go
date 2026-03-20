@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Hyaxia/blogwatcher/internal/version"
+	"github.com/traderjean/blogwatcher/internal/version"
 	"github.com/spf13/cobra"
 )
 
