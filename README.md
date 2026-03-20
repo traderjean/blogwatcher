@@ -222,6 +222,15 @@ Existing databases are upgraded automatically — the new tables are added on fi
 ### Requirements
 
 -   Go 1.24+
+-   Python 3 + [Scrapling](https://github.com/D4Vinci/Scrapling):
+    ```bash
+    python3 -m venv ~/.blogwatcher/venv
+    ~/.blogwatcher/venv/bin/pip install -r requirements.txt
+    ```
+    To update Scrapling, bump the version in `requirements.txt` and re-run:
+    ```bash
+    ~/.blogwatcher/venv/bin/pip install -r requirements.txt --upgrade
+    ```
 
 ### Running Tests
 
@@ -239,7 +248,7 @@ git push origin vX.Y.Z
 
 ## TODO
 
-- [ ] Replace goquery HTML scraping with [Scrapling](https://github.com/D4Vinci/Scrapling) for adaptive scraping, anti-bot bypass, and smarter element tracking
+- [x] Replace goquery HTML scraping with [Scrapling](https://github.com/D4Vinci/Scrapling) for adaptive scraping, anti-bot bypass, and smarter element tracking
 
 ## License
 

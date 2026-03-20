@@ -38,5 +38,6 @@ Schema uses `CREATE TABLE IF NOT EXISTS` so existing databases are upgraded auto
 - Go 1.24+
 - SQLite (modernc.org/sqlite)
 - gofeed (RSS/Atom)
-- goquery + net/http (HTML scraping)
+- Scrapling (Python, HTML scraping with anti-bot bypass)
+- goquery (RSS feed discovery)
 - cobra (CLI)

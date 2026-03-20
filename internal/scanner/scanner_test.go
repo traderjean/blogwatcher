@@ -3,6 +3,7 @@ package scanner
 import (
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -59,6 +60,11 @@ func TestScanBlogRSS(t *testing.T) {
 }
 
 func TestScanBlogScraperFallback(t *testing.T) {
+	// This test requires python3 + scrapling installed
+	if err := exec.Command("python3", "-c", "from scrapling import Fetcher").Run(); err != nil {
+		t.Skip("scrapling not installed, skipping scraper fallback test")
+	}
+
 	html := `<!DOCTYPE html>
 <html>
 <body>
