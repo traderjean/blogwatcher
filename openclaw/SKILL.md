@@ -36,8 +36,11 @@ Quick start
 
 Common commands
 
-- Add a blog: `blogwatcher add "My Blog" https://example.com`
+- Add a blog (homepage URL, feed is auto-discovered): `blogwatcher add "My Blog" https://example.com`
+- Add a blog with a direct feed URL: `blogwatcher add "My Blog" https://example.com/feed --feed-url https://example.com/feed`
 - Add with categories: `blogwatcher add "My Blog" https://example.com --category seo --category marketing`
+
+IMPORTANT: When the URL you are adding IS an RSS/Atom feed (ends in /feed, /rss, .xml, etc.), you MUST also pass `--feed-url` with the same URL. Otherwise the scanner will not find articles.
 - List blogs: `blogwatcher blogs`
 - List by category: `blogwatcher blogs --category seo`
 - List uncategorized: `blogwatcher blogs --uncategorized`
