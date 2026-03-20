@@ -8,6 +8,38 @@ A Go CLI tool to track blog articles, detect new posts, and manage read/unread s
 
 - **Categories** — Organize blogs into categories (many-to-many). Filter scans, articles, and listings by category. Existing commands work unchanged when no category is specified.
 
+## Migrating from OpenClaw's Built-in Blogwatcher
+
+OpenClaw ships with a bundled blogwatcher skill that points to the original repo. To switch to this fork:
+
+1. **Install the fork binary:**
+   ```bash
+   go install github.com/traderjean/blogwatcher/cmd/blogwatcher@latest
+   # Or build from source:
+   git clone https://github.com/traderjean/blogwatcher.git
+   cd blogwatcher
+   go build -o /opt/homebrew/bin/blogwatcher ./cmd/blogwatcher
+   ```
+
+2. **Copy the OpenClaw skill override:**
+   ```bash
+   mkdir -p ~/.openclaw/skills/blogwatcher
+   cp openclaw/SKILL.md ~/.openclaw/skills/blogwatcher/SKILL.md
+   ```
+
+3. **Disable the bundled skill** in `~/.openclaw/openclaw.json`:
+   ```json
+   {
+     "skills": {
+       "entries": {
+         "blogwatcher": { "enabled": false }
+       }
+     }
+   }
+   ```
+
+Your existing database at `~/.blogwatcher/blogwatcher.db` is upgraded automatically on first run (no migration needed).
+
 ## Features
 
 -   **Categories** - Organize blogs by topic and filter by category
@@ -27,7 +59,7 @@ go install github.com/traderjean/blogwatcher/cmd/blogwatcher@latest
 # Or build locally
 git clone https://github.com/traderjean/blogwatcher.git
 cd blogwatcher
-go build ./cmd/blogwatcher
+go build -o /opt/homebrew/bin/blogwatcher ./cmd/blogwatcher
 ```
 
 ## Usage
