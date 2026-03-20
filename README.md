@@ -6,7 +6,7 @@ A Go CLI tool to track blog articles, detect new posts, and manage read/unread s
 
 ## Alternatives
 
-If you're looking for RSS in OpenClaw, [openclaw-skill-rss-digest](https://github.com/manthis/openclaw-skill-rss-digest) is another option. We preferred forking blogwatcher for more control over scraping, categories, and CLI behavior.
+If you're looking for categories in OpenClaw, [openclaw-skill-rss-digest](https://github.com/manthis/openclaw-skill-rss-digest) is another option. We preferred forking blogwatcher for more control over scraping, categories, and CLI behavior.
 
 ## What's New in This Fork
 
