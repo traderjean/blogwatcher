@@ -1,30 +1,34 @@
 # BlogWatcher
 
+> Fork of [Hyaxia/blogwatcher](https://github.com/Hyaxia/blogwatcher) with added category support for organizing blogs by topic.
+
 A Go CLI tool to track blog articles, detect new posts, and manage read/unread status. Supports both RSS/Atom feeds and HTML scraping as fallback.
+
+## What's New in This Fork
+
+- **Categories** — Organize blogs into categories (many-to-many). Filter scans, articles, and listings by category. Existing commands work unchanged when no category is specified.
 
 ## Features
 
+-   **Categories** - Organize blogs by topic and filter by category
 -   **Dual Source Support** - Tries RSS feeds first, falls back to HTML scraping
 -   **Automatic Feed Discovery** - Detects RSS/Atom URLs from blog homepages
 -   **Read/Unread Management** - Track which articles you've read
--   **Blog Filtering** - View articles from specific blogs
+-   **Blog Filtering** - View articles from specific blogs or categories
 -   **Duplicate Prevention** - Never tracks the same article twice
 -   **Colored CLI Output** - User-friendly terminal interface
 
 ## Installation
 
 ```bash
-# Homebrew (Linux)
-brew install Hyaxia/tap/blogwatcher
-
-# Install the CLI
-go install github.com/Hyaxia/blogwatcher/cmd/blogwatcher@latest
+# Install from this fork
+go install github.com/traderjean/blogwatcher/cmd/blogwatcher@latest
 
 # Or build locally
+git clone https://github.com/traderjean/blogwatcher.git
+cd blogwatcher
 go build ./cmd/blogwatcher
 ```
-
-Windows and Linux binaries are also available on the GitHub Releases page.
 
 ## Usage
 
@@ -39,6 +43,9 @@ blogwatcher add "Tech Blog" https://techblog.com --feed-url https://techblog.com
 
 # Add with HTML scraping selector (for blogs without feeds)
 blogwatcher add "No-RSS Blog" https://norss.com --scrape-selector "article h2 a"
+
+# Add and assign to categories (auto-creates if needed)
+blogwatcher add "SEO Blog" https://seoblog.com --category seo --category marketing
 ```
 
 ### Managing Blogs
@@ -47,11 +54,38 @@ blogwatcher add "No-RSS Blog" https://norss.com --scrape-selector "article h2 a"
 # List all tracked blogs
 blogwatcher blogs
 
+# Filter by category
+blogwatcher blogs --category seo
+
+# Show blogs with no categories assigned
+blogwatcher blogs --uncategorized
+
 # Remove a blog (and all its articles)
 blogwatcher remove "My Favorite Blog"
+```
 
-# Remove without confirmation
-blogwatcher remove "My Favorite Blog" -y
+### Categories
+
+Blogs can belong to multiple categories. All commands that list or filter blogs/articles accept `--category` and `--uncategorized` flags.
+
+```bash
+# Create a category
+blogwatcher category add seo
+
+# List all categories
+blogwatcher category list
+
+# Assign a blog to a category
+blogwatcher category assign "Tech Blog" seo
+
+# Assign to multiple categories
+blogwatcher category assign "Tech Blog" marketing
+
+# Remove a blog from a category
+blogwatcher category unassign "Tech Blog" marketing
+
+# Remove a category (blogs are kept)
+blogwatcher category remove seo
 ```
 
 ### Scanning for New Articles
@@ -62,6 +96,12 @@ blogwatcher scan
 
 # Scan a specific blog
 blogwatcher scan "Tech Blog"
+
+# Scan only blogs in a category
+blogwatcher scan --category seo
+
+# Scan only uncategorized blogs
+blogwatcher scan --uncategorized
 ```
 
 ### Viewing Articles
@@ -75,6 +115,12 @@ blogwatcher articles --all
 
 # List articles from a specific blog
 blogwatcher articles --blog "Tech Blog"
+
+# List articles from a category
+blogwatcher articles --category seo
+
+# List articles from uncategorized blogs
+blogwatcher articles --uncategorized
 ```
 
 ### Managing Read Status
@@ -91,6 +137,9 @@ blogwatcher read-all
 
 # Mark all unread articles as read for a blog (skip prompt)
 blogwatcher read-all --blog "Tech Blog" --yes
+
+# Mark all unread articles in a category as read
+blogwatcher read-all --category seo --yes
 ```
 
 ## How It Works
@@ -127,6 +176,10 @@ BlogWatcher stores data in SQLite at `~/.blogwatcher/blogwatcher.db`:
 
 -   **blogs** - Tracked blogs (name, URL, feed URL, scrape selector)
 -   **articles** - Discovered articles (title, URL, dates, read status)
+-   **categories** - Blog categories (name)
+-   **blog_categories** - Many-to-many mapping between blogs and categories
+
+Existing databases are upgraded automatically — the new tables are added on first run with no migration needed.
 
 ## Development
 
@@ -137,17 +190,20 @@ BlogWatcher stores data in SQLite at `~/.blogwatcher/blogwatcher.db`:
 ### Running Tests
 
 ```bash
-# Run all tests
 go test ./...
 ```
 
 ### Publishing
 
-in addition to publishing to main a new tag should be published so homebrew will get the updated version:
+In addition to publishing to main, a new tag should be published so homebrew will get the updated version:
 ```
-  git tag vX.Y.Z
-  git push origin vX.Y.Z
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
+
+## TODO
+
+- [ ] Replace goquery HTML scraping with [Scrapling](https://github.com/D4Vinci/Scrapling) for adaptive scraping, anti-bot bypass, and smarter element tracking
 
 ## License
 

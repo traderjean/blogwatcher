@@ -32,6 +32,22 @@ func (e ArticleNotFoundError) Error() string {
 	return fmt.Sprintf("Article %d not found", e.ID)
 }
 
+type CategoryNotFoundError struct {
+	Name string
+}
+
+func (e CategoryNotFoundError) Error() string {
+	return fmt.Sprintf("Category '%s' not found", e.Name)
+}
+
+type CategoryAlreadyExistsError struct {
+	Name string
+}
+
+func (e CategoryAlreadyExistsError) Error() string {
+	return fmt.Sprintf("Category '%s' already exists", e.Name)
+}
+
 func AddBlog(db *storage.Database, name string, url string, feedURL string, scrapeSelector string) (model.Blog, error) {
 	if existing, err := db.GetBlogByName(name); err != nil {
 		return model.Blog{}, err
@@ -65,7 +81,7 @@ func RemoveBlog(db *storage.Database, name string) error {
 	return err
 }
 
-func GetArticles(db *storage.Database, showAll bool, blogName string) ([]model.Article, map[int64]string, error) {
+func GetArticles(db *storage.Database, showAll bool, blogName string, categoryName string, uncategorized bool) ([]model.Article, map[int64]string, error) {
 	var blogID *int64
 	if blogName != "" {
 		blog, err := db.GetBlogByName(blogName)
@@ -78,7 +94,19 @@ func GetArticles(db *storage.Database, showAll bool, blogName string) ([]model.A
 		blogID = &blog.ID
 	}
 
-	articles, err := db.ListArticles(!showAll, blogID)
+	var categoryID *int64
+	if categoryName != "" {
+		cat, err := db.GetCategoryByName(categoryName)
+		if err != nil {
+			return nil, nil, err
+		}
+		if cat == nil {
+			return nil, nil, CategoryNotFoundError{Name: categoryName}
+		}
+		categoryID = &cat.ID
+	}
+
+	articles, err := db.ListArticles(!showAll, blogID, categoryID, uncategorized)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -111,7 +139,7 @@ func MarkArticleRead(db *storage.Database, articleID int64) (model.Article, erro
 	return *article, nil
 }
 
-func MarkAllArticlesRead(db *storage.Database, blogName string) ([]model.Article, error) {
+func MarkAllArticlesRead(db *storage.Database, blogName string, categoryName string, uncategorized bool) ([]model.Article, error) {
 	var blogID *int64
 	if blogName != "" {
 		blog, err := db.GetBlogByName(blogName)
@@ -124,7 +152,19 @@ func MarkAllArticlesRead(db *storage.Database, blogName string) ([]model.Article
 		blogID = &blog.ID
 	}
 
-	articles, err := db.ListArticles(true, blogID)
+	var categoryID *int64
+	if categoryName != "" {
+		cat, err := db.GetCategoryByName(categoryName)
+		if err != nil {
+			return nil, err
+		}
+		if cat == nil {
+			return nil, CategoryNotFoundError{Name: categoryName}
+		}
+		categoryID = &cat.ID
+	}
+
+	articles, err := db.ListArticles(true, blogID, categoryID, uncategorized)
 	if err != nil {
 		return nil, err
 	}
@@ -154,4 +194,77 @@ func MarkArticleUnread(db *storage.Database, articleID int64) (model.Article, er
 		}
 	}
 	return *article, nil
+}
+
+func AddCategory(db *storage.Database, name string) (model.Category, error) {
+	existing, err := db.GetCategoryByName(name)
+	if err != nil {
+		return model.Category{}, err
+	}
+	if existing != nil {
+		return model.Category{}, CategoryAlreadyExistsError{Name: name}
+	}
+	return db.AddCategory(name)
+}
+
+func RemoveCategory(db *storage.Database, name string) error {
+	cat, err := db.GetCategoryByName(name)
+	if err != nil {
+		return err
+	}
+	if cat == nil {
+		return CategoryNotFoundError{Name: name}
+	}
+	return db.RemoveCategory(cat.ID)
+}
+
+func ListCategories(db *storage.Database) ([]model.Category, error) {
+	return db.ListCategories()
+}
+
+func AssignBlogToCategory(db *storage.Database, blogName string, categoryName string) error {
+	blog, err := db.GetBlogByName(blogName)
+	if err != nil {
+		return err
+	}
+	if blog == nil {
+		return BlogNotFoundError{Name: blogName}
+	}
+	cat, err := db.GetCategoryByName(categoryName)
+	if err != nil {
+		return err
+	}
+	if cat == nil {
+		return CategoryNotFoundError{Name: categoryName}
+	}
+	return db.AssignBlogCategory(blog.ID, cat.ID)
+}
+
+func UnassignBlogFromCategory(db *storage.Database, blogName string, categoryName string) error {
+	blog, err := db.GetBlogByName(blogName)
+	if err != nil {
+		return err
+	}
+	if blog == nil {
+		return BlogNotFoundError{Name: blogName}
+	}
+	cat, err := db.GetCategoryByName(categoryName)
+	if err != nil {
+		return err
+	}
+	if cat == nil {
+		return CategoryNotFoundError{Name: categoryName}
+	}
+	return db.UnassignBlogCategory(blog.ID, cat.ID)
+}
+
+func GetOrCreateCategory(db *storage.Database, name string) (model.Category, error) {
+	existing, err := db.GetCategoryByName(name)
+	if err != nil {
+		return model.Category{}, err
+	}
+	if existing != nil {
+		return *existing, nil
+	}
+	return db.AddCategory(name)
 }

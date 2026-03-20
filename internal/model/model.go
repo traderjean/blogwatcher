@@ -9,6 +9,12 @@ type Blog struct {
 	FeedURL        string
 	ScrapeSelector string
 	LastScanned    *time.Time
+	Categories     []string
+}
+
+type Category struct {
+	ID   int64
+	Name string
 }
 
 type Article struct {

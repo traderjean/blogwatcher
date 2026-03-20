@@ -1,6 +1,6 @@
 ---
 name: blogwatcher-cli
-description: Use when managing or interacting with favorite blogs via the BlogWatcher CLI—adding/removing blogs, scanning for new posts, listing articles, marking read/unread, or modifying related CLI behavior, scanning, storage, and tests.
+description: Use when managing or interacting with favorite blogs via the BlogWatcher CLI—adding/removing blogs, scanning for new posts, listing articles, marking read/unread, managing categories, or modifying related CLI behavior, scanning, storage, and tests.
 ---
 
 # BlogWatcher CLI
@@ -10,6 +10,7 @@ description: Use when managing or interacting with favorite blogs via the BlogWa
 - Route business logic through `internal/controller` and persistence through `internal/storage`.
 - Use scanning pipeline packages in `internal/scanner`, `internal/rss`, and `internal/scraper`.
 - Remember the default SQLite path is `~/.blogwatcher/blogwatcher.db` and is created on demand.
+- Categories use a many-to-many relationship via `categories` and `blog_categories` tables.
 
 ## Run Commands
 - Run locally with `go run ./cmd/blogwatcher ...`.
@@ -30,7 +31,8 @@ description: Use when managing or interacting with favorite blogs via the BlogWa
 ## Output Conventions
 - Preserve user-friendly CLI output with colors and clear errors.
 - When listing posts available for reading, always include the link to each post in the output.
-- Keep error handling consistent with existing exceptions (`BlogNotFoundError`, `BlogAlreadyExistsError`, `ArticleNotFoundError`).
+- Keep error handling consistent with existing exceptions (`BlogNotFoundError`, `BlogAlreadyExistsError`, `ArticleNotFoundError`, `CategoryNotFoundError`, `CategoryAlreadyExistsError`).
+- `--category` and `--uncategorized` flags are mutually exclusive on all commands that support them.
 
 ### Example (posts available for reading)
 ```text
@@ -44,4 +46,19 @@ Unread articles (2):
   [13] [new] Async IO in Practice
        Blog: Test & Code
        URL: https://testandcode.com/async-io-in-practice/
+```
+
+### Example (blog listing with categories)
+```text
+Tracked blogs (2):
+
+  Real Python
+    URL: https://realpython.com
+    Feed: https://realpython.com/atom.xml
+    Categories: python, tutorials
+    Last scanned: 2026-03-20 18:00
+
+  Test & Code
+    URL: https://testandcode.com
+    Last scanned: 2026-03-20 18:00
 ```

@@ -115,7 +115,11 @@ func ScanAllBlogs(db *storage.Database, workers int) ([]ScanResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if workers <= 1 {
+	return scanBlogs(db, blogs, workers)
+}
+
+func scanBlogs(db *storage.Database, blogs []model.Blog, workers int) ([]ScanResult, error) {
+	if workers <= 1 || len(blogs) <= 1 {
 		results := make([]ScanResult, 0, len(blogs))
 		for _, blog := range blogs {
 			results = append(results, ScanBlog(db, blog))
@@ -158,6 +162,29 @@ func ScanAllBlogs(db *storage.Database, workers int) ([]ScanResult, error) {
 	}
 
 	return results, nil
+}
+
+func ScanBlogsByCategory(db *storage.Database, categoryName string, workers int) ([]ScanResult, error) {
+	cat, err := db.GetCategoryByName(categoryName)
+	if err != nil {
+		return nil, err
+	}
+	if cat == nil {
+		return nil, fmt.Errorf("category '%s' not found", categoryName)
+	}
+	blogs, err := db.ListBlogsByCategory(cat.ID)
+	if err != nil {
+		return nil, err
+	}
+	return scanBlogs(db, blogs, workers)
+}
+
+func ScanUncategorizedBlogs(db *storage.Database, workers int) ([]ScanResult, error) {
+	blogs, err := db.ListUncategorizedBlogs()
+	if err != nil {
+		return nil, err
+	}
+	return scanBlogs(db, blogs, workers)
 }
 
 func ScanBlogByName(db *storage.Database, name string) (*ScanResult, error) {

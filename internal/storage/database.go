@@ -87,6 +87,17 @@ func (db *Database) init() error {
 			is_read BOOLEAN DEFAULT FALSE,
 			FOREIGN KEY (blog_id) REFERENCES blogs(id)
 		);
+		CREATE TABLE IF NOT EXISTS categories (
+			id INTEGER PRIMARY KEY,
+			name TEXT NOT NULL UNIQUE
+		);
+		CREATE TABLE IF NOT EXISTS blog_categories (
+			blog_id INTEGER NOT NULL,
+			category_id INTEGER NOT NULL,
+			PRIMARY KEY (blog_id, category_id),
+			FOREIGN KEY (blog_id) REFERENCES blogs(id),
+			FOREIGN KEY (category_id) REFERENCES categories(id)
+		);
 	`
 	_, err := db.conn.Exec(schema)
 	return err
@@ -167,7 +178,11 @@ func (db *Database) UpdateBlogLastScanned(id int64, lastScanned time.Time) error
 }
 
 func (db *Database) RemoveBlog(id int64) (bool, error) {
-	_, err := db.conn.Exec(`DELETE FROM articles WHERE blog_id = ?`, id)
+	_, err := db.conn.Exec(`DELETE FROM blog_categories WHERE blog_id = ?`, id)
+	if err != nil {
+		return false, err
+	}
+	_, err = db.conn.Exec(`DELETE FROM articles WHERE blog_id = ?`, id)
 	if err != nil {
 		return false, err
 	}
@@ -298,7 +313,7 @@ func (db *Database) GetExistingArticleURLs(urls []string) (map[string]struct{}, 
 	return result, nil
 }
 
-func (db *Database) ListArticles(unreadOnly bool, blogID *int64) ([]model.Article, error) {
+func (db *Database) ListArticles(unreadOnly bool, blogID *int64, categoryID *int64, uncategorized bool) ([]model.Article, error) {
 	query := `SELECT id, blog_id, title, url, published_date, discovered_date, is_read FROM articles WHERE 1=1`
 	var args []interface{}
 	if unreadOnly {
@@ -307,6 +322,13 @@ func (db *Database) ListArticles(unreadOnly bool, blogID *int64) ([]model.Articl
 	if blogID != nil {
 		query += " AND blog_id = ?"
 		args = append(args, *blogID)
+	}
+	if categoryID != nil {
+		query += " AND blog_id IN (SELECT blog_id FROM blog_categories WHERE category_id = ?)"
+		args = append(args, *categoryID)
+	}
+	if uncategorized {
+		query += " AND blog_id NOT IN (SELECT blog_id FROM blog_categories)"
 	}
 	query += " ORDER BY discovered_date DESC"
 
@@ -351,6 +373,130 @@ func (db *Database) MarkArticleUnread(id int64) (bool, error) {
 		return false, err
 	}
 	return rows > 0, nil
+}
+
+func (db *Database) AddCategory(name string) (model.Category, error) {
+	result, err := db.conn.Exec(`INSERT INTO categories (name) VALUES (?)`, name)
+	if err != nil {
+		return model.Category{}, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return model.Category{}, err
+	}
+	return model.Category{ID: id, Name: name}, nil
+}
+
+func (db *Database) GetCategoryByName(name string) (*model.Category, error) {
+	row := db.conn.QueryRow(`SELECT id, name FROM categories WHERE name = ?`, name)
+	var cat model.Category
+	if err := row.Scan(&cat.ID, &cat.Name); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &cat, nil
+}
+
+func (db *Database) ListCategories() ([]model.Category, error) {
+	rows, err := db.conn.Query(`SELECT id, name FROM categories ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var categories []model.Category
+	for rows.Next() {
+		var cat model.Category
+		if err := rows.Scan(&cat.ID, &cat.Name); err != nil {
+			return nil, err
+		}
+		categories = append(categories, cat)
+	}
+	return categories, rows.Err()
+}
+
+func (db *Database) RemoveCategory(id int64) error {
+	_, err := db.conn.Exec(`DELETE FROM blog_categories WHERE category_id = ?`, id)
+	if err != nil {
+		return err
+	}
+	_, err = db.conn.Exec(`DELETE FROM categories WHERE id = ?`, id)
+	return err
+}
+
+func (db *Database) AssignBlogCategory(blogID, categoryID int64) error {
+	_, err := db.conn.Exec(`INSERT OR IGNORE INTO blog_categories (blog_id, category_id) VALUES (?, ?)`, blogID, categoryID)
+	return err
+}
+
+func (db *Database) UnassignBlogCategory(blogID, categoryID int64) error {
+	_, err := db.conn.Exec(`DELETE FROM blog_categories WHERE blog_id = ? AND category_id = ?`, blogID, categoryID)
+	return err
+}
+
+func (db *Database) GetBlogCategories(blogID int64) ([]model.Category, error) {
+	rows, err := db.conn.Query(
+		`SELECT c.id, c.name FROM categories c
+		JOIN blog_categories bc ON bc.category_id = c.id
+		WHERE bc.blog_id = ? ORDER BY c.name`, blogID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var categories []model.Category
+	for rows.Next() {
+		var cat model.Category
+		if err := rows.Scan(&cat.ID, &cat.Name); err != nil {
+			return nil, err
+		}
+		categories = append(categories, cat)
+	}
+	return categories, rows.Err()
+}
+
+func (db *Database) ListBlogsByCategory(categoryID int64) ([]model.Blog, error) {
+	rows, err := db.conn.Query(
+		`SELECT b.id, b.name, b.url, b.feed_url, b.scrape_selector, b.last_scanned
+		FROM blogs b
+		JOIN blog_categories bc ON bc.blog_id = b.id
+		WHERE bc.category_id = ? ORDER BY b.name`, categoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var blogs []model.Blog
+	for rows.Next() {
+		blog, err := scanBlog(rows)
+		if err != nil {
+			return nil, err
+		}
+		if blog != nil {
+			blogs = append(blogs, *blog)
+		}
+	}
+	return blogs, rows.Err()
+}
+
+func (db *Database) ListUncategorizedBlogs() ([]model.Blog, error) {
+	rows, err := db.conn.Query(
+		`SELECT id, name, url, feed_url, scrape_selector, last_scanned
+		FROM blogs WHERE id NOT IN (SELECT blog_id FROM blog_categories) ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var blogs []model.Blog
+	for rows.Next() {
+		blog, err := scanBlog(rows)
+		if err != nil {
+			return nil, err
+		}
+		if blog != nil {
+			blogs = append(blogs, *blog)
+		}
+	}
+	return blogs, rows.Err()
 }
 
 func scanBlog(scanner interface{ Scan(dest ...any) error }) (*model.Blog, error) {
