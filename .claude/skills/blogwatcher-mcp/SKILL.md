@@ -52,6 +52,12 @@ Scanning
 - `scan()` with no args = all blogs. Can take 1-3 minutes for ~50 blogs (most are RSS, fast; a few use stealth scraping which is ~3-7s each).
 - Scope when possible: `scan({category: "X"})` is friendlier.
 - Report scan results as "N new across M blogs", listing the blogs with new content. Don't dump all per-blog rows unless the user asks.
+- **Known limitation:** scans don't honor request cancellation. If the user closes the chat mid-scan, the underlying scrapers run to completion. Prefer scoped scans (single category or single blog) over `scan()` with no args.
+
+Partial-success semantics
+
+- `add_blog` may succeed in creating the blog but fail to assign categories. In that case the result has `category_errors` and `IsError=false` — the blog was created. Tell the user which categories failed and offer to retry just those.
+- `mark_read` only flags `IsError=true` if *zero* IDs succeeded. Partial successes return `IsError=false` with an `errors` array listing the failed IDs. Don't auto-retry the whole batch — re-issue only for the IDs in `errors`.
 
 Output the user already understands
 

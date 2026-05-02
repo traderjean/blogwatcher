@@ -6,8 +6,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -20,22 +24,40 @@ import (
 const scanWorkers = 4
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatalf("%v", err)
+	}
+}
+
+func run() error {
 	path, err := storage.DefaultDBPath()
 	if err != nil {
-		log.Fatalf("db path: %v", err)
+		return fmt.Errorf("db path: %w", err)
 	}
 	db, err := storage.OpenDatabase(path)
 	if err != nil {
-		log.Fatalf("open db: %v", err)
+		return fmt.Errorf("open db: %w", err)
 	}
 	defer db.Close()
 
 	srv := mcp.NewServer(&mcp.Implementation{Name: "blogwatcher", Version: "0.1.0"}, nil)
 	registerTools(srv, db)
 
-	if err := srv.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
-		log.Fatalf("mcp run: %v", err)
+	// Honor SIGTERM/SIGINT for graceful shutdown so the deferred db.Close
+	// runs. Claude Desktop usually SIGKILLs at session end (defer skipped),
+	// but WAL mode means no data loss; this handles cooperative shutdown.
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil {
+		// Cooperative shutdown via SIGTERM/SIGINT cancels ctx, which the
+		// SDK surfaces as context.Canceled. That's not a fatal error.
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		return fmt.Errorf("mcp run: %w", err)
 	}
+	return nil
 }
 
 func registerTools(srv *mcp.Server, db *storage.Database) {
@@ -164,7 +186,10 @@ func registerListBlogs(srv *mcp.Server, db *storage.Database) {
 		}
 		result := make([]out, 0, len(blogs))
 		for _, b := range blogs {
-			cats, _ := db.GetBlogCategories(b.ID)
+			cats, cerr := db.GetBlogCategories(b.ID)
+			if cerr != nil {
+				return nil, nil, fmt.Errorf("load categories for blog %d: %w", b.ID, cerr)
+			}
 			catNames := make([]string, 0, len(cats))
 			for _, c := range cats {
 				catNames = append(catNames, c.Name)
@@ -195,7 +220,10 @@ func registerListCategories(srv *mcp.Server, db *storage.Database) {
 		}
 		result := make([]out, 0, len(cats))
 		for _, c := range cats {
-			blogs, _ := db.ListBlogsByCategory(c.ID)
+			blogs, berr := db.ListBlogsByCategory(c.ID)
+			if berr != nil {
+				return nil, nil, fmt.Errorf("count blogs for category %d: %w", c.ID, berr)
+			}
 			result = append(result, out{ID: c.ID, Name: c.Name, Blogs: len(blogs)})
 		}
 		return jsonResult(map[string]any{"count": len(result), "categories": result})
@@ -224,7 +252,10 @@ func registerMarkRead(srv *mcp.Server, db *storage.Database) {
 		if len(errs) > 0 {
 			out["errors"] = errs
 		}
-		return jsonResult(out)
+		// Only flag IsError when *nothing* succeeded. Partial success is
+		// surfaced via the errors array — flagging the whole op as failed
+		// would mislead clients about articles that did get marked.
+		return jsonResultIsError(out, marked == 0 && len(errs) > 0)
 	})
 }
 
@@ -261,20 +292,32 @@ func registerAddBlog(srv *mcp.Server, db *storage.Database) {
 		Description: "Add a new blog to track. If url IS the feed (ends in /feed, /rss, .xml), pass the same URL as feed_url too. " +
 			"Categories are created on-the-fly if they don't exist.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args AddBlogArgs) (*mcp.CallToolResult, any, error) {
+		if args.Name == "" || args.URL == "" {
+			return nil, nil, fmt.Errorf("name and url are required")
+		}
 		blog, err := controller.AddBlog(db, args.Name, args.URL, args.FeedURL, args.ScrapeSelector)
 		if err != nil {
 			return nil, nil, err
 		}
 		var assignErrors []string
 		for _, c := range args.Categories {
+			// Auto-create the category if missing — AssignBlogToCategory
+			// alone returns CategoryNotFoundError for unknown names.
+			if _, err := controller.GetOrCreateCategory(db, c); err != nil {
+				assignErrors = append(assignErrors, fmt.Sprintf("%s: ensure: %v", c, err))
+				continue
+			}
 			if err := controller.AssignBlogToCategory(db, blog.Name, c); err != nil {
-				assignErrors = append(assignErrors, fmt.Sprintf("%s: %v", c, err))
+				assignErrors = append(assignErrors, fmt.Sprintf("%s: assign: %v", c, err))
 			}
 		}
 		out := map[string]any{"id": blog.ID, "name": blog.Name, "url": blog.URL}
 		if len(assignErrors) > 0 {
 			out["category_errors"] = assignErrors
 		}
+		// Blog row was created successfully; category_errors signals
+		// partial work. Flagging IsError here would tell the client the
+		// blog wasn't created and prompt a duplicate-add retry.
 		return jsonResult(out)
 	})
 }
@@ -296,10 +339,13 @@ func registerScan(srv *mcp.Server, db *storage.Database) {
 		switch {
 		case args.BlogName != "":
 			r, e := scanner.ScanBlogByName(db, args.BlogName)
-			err = e
-			if r != nil {
-				results = []scanner.ScanResult{*r}
+			if e != nil {
+				return nil, nil, e
 			}
+			if r == nil {
+				return nil, nil, fmt.Errorf("blog not found: %s", args.BlogName)
+			}
+			results = []scanner.ScanResult{*r}
 		case args.Uncategorized:
 			results, err = scanner.ScanUncategorizedBlogs(db, scanWorkers)
 		case args.Category != "":
@@ -329,9 +375,16 @@ func registerScan(srv *mcp.Server, db *storage.Database) {
 }
 
 func jsonResult(payload any) (*mcp.CallToolResult, any, error) {
+	return jsonResultIsError(payload, false)
+}
+
+func jsonResultIsError(payload any, isError bool) (*mcp.CallToolResult, any, error) {
 	b, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
 		return nil, nil, err
 	}
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, nil, nil
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: string(b)}},
+		IsError: isError,
+	}, nil, nil
 }
