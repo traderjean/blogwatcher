@@ -32,11 +32,25 @@ This is what blogwatcher MCP enables that the CLI can't do alone. Pattern:
 
 1. **Discover scope.** `list_categories` to confirm the user's category name. If they said "marketing" but the category is "marketing-ops", surface that.
 2. **Pull queue.** `list_articles(category=X, unread_only=true, since_days=7, limit=30)`.
-3. **Read content.** For each URL in the result, call the Scrapling MCP — `get` first (fast), escalate to `stealthy_fetch` only if you hit a 403 or empty response. Don't headless-browser everything; it's slow.
+3. **Read content** *only when needed* — see the fetch tips below.
 4. **Compose the brief.** Cluster by topic (multiple blogs covering the same story collapse into one bullet). Lead with what's actually new, not a per-blog dump. Mention which blog said what.
 5. **Offer cleanup.** "Mark these N as read?" → on yes, `mark_read({article_ids: [...]})`.
 
 If the user just wants the queue without summaries, return a short list of titles + URLs and stop. Don't auto-summarize unless they asked.
+
+Brief-generation fetch tips
+
+The killer workflow can blow up two ways: oversized payloads (bulk fetches accumulating into 500K+ char responses) and wasted round trips on JS-rendered sites. Apply these:
+
+- **Title-first.** `list_articles` returns titles. For ~70% of briefs, titles alone are enough to cluster and summarize — fetch bodies only when a title is ambiguous, when the user wants depth, or when two articles look like they cover the same story and you need confirmation.
+- **No bulk fetches for full pages.** Scrapling's `bulk_get` / `bulk_fetch` are tuned for parallel API/feed fetches with small bodies. For HTML article bodies, use **single-URL `fetch` calls in a loop, summarize each before fetching the next, then discard.** Don't accumulate raw HTML across many URLs in your context.
+- **Cap batches.** If you do call a bulk tool, cap at 5 URLs per call. Larger batches risk overflowing tool-result token limits and triggering "saved to file" fallbacks that are awkward to read back.
+- **Skip `get` for SPA hosts.** These sites are React/Next.js shells that return nav-only HTML to plain HTTP fetches. Go straight to Scrapling's `fetch` (Playwright-rendered):
+    - `hotelrank.ai`
+    - `examine.com`
+    - `revinate.com`
+    - any site where `list_blogs` shows a `scrape_selector` configured (those were chosen specifically because RSS/static fetch didn't work)
+- **Trust 404s.** If a fetch returns 404, the publisher deleted the article. Drop it from the brief, mention briefly. Don't retry, don't escalate to stealthy_fetch — 404 is 404.
 
 Adding blogs conversationally
 
