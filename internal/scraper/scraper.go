@@ -17,6 +17,9 @@ import (
 //go:embed scrape.py
 var scrapePy string
 
+//go:embed fetch.py
+var fetchPy string
+
 type ScrapedArticle struct {
 	Title         string
 	URL           string
@@ -80,6 +83,39 @@ func ScrapeBlog(blogURL string, selector string, timeout time.Duration) ([]Scrap
 		})
 	}
 	return articles, nil
+}
+
+func FetchRaw(targetURL string, timeout time.Duration) ([]byte, error) {
+	tmpFile, err := os.CreateTemp("", "fetch-*.py")
+	if err != nil {
+		return nil, ScrapeError{Message: fmt.Sprintf("failed to create temp file: %v", err)}
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(fetchPy); err != nil {
+		tmpFile.Close()
+		return nil, ScrapeError{Message: fmt.Sprintf("failed to write script: %v", err)}
+	}
+	tmpFile.Close()
+
+	timeoutSecs := strconv.Itoa(int(timeout.Seconds()))
+	ctx, cancel := context.WithTimeout(context.Background(), timeout+30*time.Second)
+	defer cancel()
+
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, findPython(), tmpFile.Name(), targetURL, timeoutSecs)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		msg := stderr.String()
+		if msg == "" {
+			msg = err.Error()
+		}
+		return nil, ScrapeError{Message: fmt.Sprintf("fetch failed: %s", msg)}
+	}
+
+	return stdout.Bytes(), nil
 }
 
 func findPython() string {

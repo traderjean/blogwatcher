@@ -1,8 +1,10 @@
 package rss
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -37,8 +39,16 @@ func ParseFeed(feedURL string, timeout time.Duration) ([]FeedArticle, error) {
 		return nil, FeedParseError{Message: fmt.Sprintf("failed to fetch feed: status %d", response.StatusCode)}
 	}
 
+	return parseFeedReader(response.Body)
+}
+
+func ParseFeedBytes(body []byte) ([]FeedArticle, error) {
+	return parseFeedReader(bytes.NewReader(body))
+}
+
+func parseFeedReader(r io.Reader) ([]FeedArticle, error) {
 	parser := gofeed.NewParser()
-	feed, err := parser.Parse(response.Body)
+	feed, err := parser.Parse(r)
 	if err != nil {
 		return nil, FeedParseError{Message: fmt.Sprintf("failed to parse feed: %v", err)}
 	}

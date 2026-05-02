@@ -11,7 +11,7 @@ import sys
 from urllib.parse import urljoin
 
 try:
-    from scrapling import Fetcher, StealthyFetcher
+    from scrapling import StealthyFetcher
 except ImportError:
     print("Scrapling not installed. Run: pip3 install 'scrapling[all]'", file=sys.stderr)
     sys.exit(1)
@@ -20,24 +20,25 @@ logging.getLogger("scrapling").setLevel(logging.ERROR)
 
 
 def scrape(url, selector, timeout):
-    # Try fast static fetcher first (class methods, not instances)
-    page = Fetcher.get(url, timeout=timeout)
-    results = extract(page, url, selector)
-
-    # Escalate to stealth if blocked or empty
-    if page.status == 403 or not results:
-        page = StealthyFetcher.fetch(url, headless=True, timeout=timeout)
-        results = extract(page, url, selector)
-
-    return results
+    # Always use StealthyFetcher — blogs frequently sit behind anti-bot walls,
+    # and the per-call cost is acceptable for a periodic scanner.
+    # StealthyFetcher.timeout is in milliseconds (Playwright convention).
+    # network_idle=True lets SPAs hydrate before we read the DOM (~+1-2s).
+    page = StealthyFetcher.fetch(
+        url, headless=True, timeout=timeout * 1000, network_idle=True
+    )
+    return extract(page, url, selector)
 
 
 def extract(page, base_url, selector):
-    seen = set()
-    articles = []
+    # url -> (title, score). Multiple anchors can point at the same article
+    # (image, title, "read more" button). Score the candidate title at each
+    # encounter so a later occurrence with a better source (e.g. heading)
+    # can replace an earlier weak one (e.g. "Read more").
+    best = {}
+    order = []
 
     for el in page.css(selector):
-        # Find anchor: use element itself or first child <a>
         if el.tag == "a":
             link = el
         else:
@@ -51,22 +52,42 @@ def extract(page, base_url, selector):
             continue
 
         resolved = urljoin(base_url, href)
-        if resolved in seen:
-            continue
-        seen.add(resolved)
+        title, score = best_title(link, el)
 
-        # Extract title: link text > title attr > parent text
-        title = (link.text or "").strip()
-        if not title:
-            title = (link.attrib.get("title") or "").strip()
-        if not title:
-            title = (el.text or "").strip()
-        if not title:
-            continue
+        if resolved not in best:
+            best[resolved] = (title, score)
+            order.append(resolved)
+        elif score > best[resolved][1]:
+            best[resolved] = (title, score)
 
-        articles.append({"title": title, "url": resolved, "published_date": None})
+    return [
+        {"title": best[url][0], "url": url, "published_date": None}
+        for url in order
+        if best[url][0]
+    ]
 
-    return articles
+
+def best_title(link, el):
+    # Returns (title, score). Higher score = stronger signal.
+    headings = link.css("h1, h2, h3, h4, h5, h6")
+    if headings:
+        t = headings[0].get_all_text().strip()
+        if t:
+            return (t, 3)
+    t = (link.text or "").strip()
+    if t:
+        return (t, 2)
+    t = (link.attrib.get("title") or "").strip()
+    if t:
+        return (t, 2)
+    if hasattr(link, "get_all_text"):
+        all_text = link.get_all_text().strip()
+        if all_text:
+            return (all_text.splitlines()[0].strip(), 1)
+    t = (el.text or "").strip()
+    if t:
+        return (t, 1)
+    return ("", 0)
 
 
 def main():

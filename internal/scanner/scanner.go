@@ -37,10 +37,25 @@ func ScanBlog(db *storage.Database, blog model.Blog) ScanResult {
 	if feedURL != "" {
 		feedArticles, err := rss.ParseFeed(feedURL, 30*time.Second)
 		if err != nil {
+			if raw, ferr := scraper.FetchRaw(feedURL, 30*time.Second); ferr == nil {
+				if retryArticles, perr := rss.ParseFeedBytes(raw); perr == nil {
+					feedArticles = retryArticles
+					err = nil
+					source = "rss+scrapling"
+				} else {
+					err = fmt.Errorf("%s; stealth parse: %v", err.Error(), perr)
+				}
+			} else {
+				err = fmt.Errorf("%s; stealth fetch: %v", err.Error(), ferr)
+			}
+		}
+		if err != nil {
 			errText = err.Error()
 		} else {
 			articles = convertFeedArticles(blog.ID, feedArticles)
-			source = "rss"
+			if source == "" || source == "none" {
+				source = "rss"
+			}
 		}
 	}
 
